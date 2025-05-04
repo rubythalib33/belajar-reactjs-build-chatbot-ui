@@ -3,31 +3,62 @@ import { v4 as uuidv4 } from 'uuid';
 import './App.css';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
+import Login from './components/Login';
+import Header from './components/Header';
 import { Session, Message } from './types';
 import { getSessions, saveSession, addMessage } from './utils/storage';
 import { sendChatMessage } from './utils/api';
+import { isAuthenticated } from './utils/auth';
 
 const App: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [authenticated, setAuthenticated] = useState<boolean>(false);
 
-  // Load sessions from storage on initial render
+  // Check auth status on initial load
   useEffect(() => {
-    const storedSessions = getSessions();
-    setSessions(storedSessions);
-    
-    // If there are sessions, set the first one as active
-    if (storedSessions.length > 0) {
-      setActiveSessionId(storedSessions[0].id);
-    } else {
-      // If no sessions exist, create a new one
-      createNewSession();
-    }
+    setAuthenticated(isAuthenticated());
   }, []);
 
+  // Load sessions from storage on authentication
+  useEffect(() => {
+    if (authenticated) {
+      const loadSessions = async () => {
+        try {
+          const storedSessions = await getSessions();
+          setSessions(storedSessions);
+          
+          // If there are sessions, set the first one as active
+          if (storedSessions.length > 0) {
+            setActiveSessionId(storedSessions[0].id);
+          } else {
+            // If no sessions exist, create a new one
+            await createNewSession();
+          }
+        } catch (error) {
+          console.error('Error loading sessions:', error);
+        }
+      };
+      
+      loadSessions();
+    }
+  }, [authenticated]);
+
+  // Handle successful login
+  const handleLoginSuccess = () => {
+    setAuthenticated(true);
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    setAuthenticated(false);
+    setSessions([]);
+    setActiveSessionId('');
+  };
+
   // Create a new chat session
-  const createNewSession = () => {
+  const createNewSession = async () => {
     const newSession: Session = {
       id: uuidv4(),
       title: 'New Chat',
@@ -37,8 +68,9 @@ const App: React.FC = () => {
     };
     
     setSessions(prevSessions => [newSession, ...prevSessions]);
-    saveSession(newSession);
+    await saveSession(newSession);
     setActiveSessionId(newSession.id);
+    return newSession;
   };
 
   // Get active session messages
@@ -73,7 +105,7 @@ const App: React.FC = () => {
     });
     
     setSessions(updatedSessions);
-    addMessage(activeSessionId, userMessage);
+    await addMessage(activeSessionId, userMessage);
     
     // Prepare messages for API - include only the last 5 messages for context
     const activeSession = updatedSessions.find(s => s.id === activeSessionId);
@@ -112,7 +144,7 @@ const App: React.FC = () => {
       );
       
       // Save assistant message to storage
-      addMessage(activeSessionId, assistantMessage);
+      await addMessage(activeSessionId, assistantMessage);
       
     } catch (error) {
       console.error('Error getting response:', error);
@@ -137,7 +169,7 @@ const App: React.FC = () => {
         })
       );
       
-      addMessage(activeSessionId, errorMessage);
+      await addMessage(activeSessionId, errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -145,19 +177,28 @@ const App: React.FC = () => {
 
   return (
     <div className="app">
-      <Sidebar 
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        onSelectSession={setActiveSessionId}
-        onNewSession={createNewSession}
-      />
-      <main className="main-content">
-        <ChatArea 
-          messages={getActiveSessionMessages()}
-          onSendMessage={handleSendMessage}
-          isLoading={isLoading}
-        />
-      </main>
+      {!authenticated ? (
+        <Login onLoginSuccess={handleLoginSuccess} />
+      ) : (
+        <>
+          <Sidebar 
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelectSession={setActiveSessionId}
+            onNewSession={createNewSession}
+          />
+          <div className="main-container">
+            <Header onLogout={handleLogout} />
+            <main className="main-content">
+              <ChatArea 
+                messages={getActiveSessionMessages()}
+                onSendMessage={handleSendMessage}
+                isLoading={isLoading}
+              />
+            </main>
+          </div>
+        </>
+      )}
     </div>
   );
 };

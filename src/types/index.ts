@@ -12,3 +12,13 @@ export type Session = {
     createdAt: number;
     updatedAt: number;
   };
+
+export type User = {
+  email: string;
+  password: string;
+};
+
+export type AuthState = {
+  isAuthenticated: boolean;
+  user: User | null;
+};
